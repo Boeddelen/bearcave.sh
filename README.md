@@ -1,6 +1,6 @@
-# BearCave
+# bearcave.sh
 
-**BearCave** is a terminal-based, locally encrypted password vault for Linux and macOS.  
+**bearcave.sh** is a terminal-based, locally encrypted password vault for Linux and macOS.  
 All credentials are stored on your own machine — no cloud, no sync, no external service.
 
 ---
@@ -53,13 +53,13 @@ brew install openssl oath-toolkit
 ## Installation
 
 ```bash
-git clone https://github.com/Boeddelen/BearCave.git
-cd BearCave
+git clone https://github.com/Boeddelen/bearcave.sh.git
+cd bearcave.sh
 chmod +x bearcave.sh
 ./bearcave.sh
 ```
 
-No build step required. BearCave creates its data directory (`./bearcave/`) next to the script on first run.
+No build step required. bearcave.sh creates its data directory (`./bearcave/`) next to the script on first run.
 
 ---
 
@@ -103,6 +103,7 @@ From the main menu, select **1 — Create user** to set up your vault. You will 
 | 7 | Enable MFA |
 | 8 | Disable MFA |
 | 9 | Lock and log out |
+| 10 | Appearance settings |
 
 ### Viewing credentials
 
@@ -115,7 +116,7 @@ No credentials remain visible on screen after the window closes.
 
 ### Clipboard support
 
-BearCave automatically detects which clipboard tool is available:
+bearcave.sh automatically detects which clipboard tool is available:
 
 | Tool | Environment |
 |---|---|
@@ -128,9 +129,23 @@ If none of these are installed, the copy option is hidden and a message is shown
 
 ---
 
+## Appearance settings
+
+From the session menu, select **10 — Appearance settings** to customise the colour scheme. Three independent colour roles can each be set to any of the 7 standard terminal colours:
+
+| Role | Controls |
+|---|---|
+| Border colour | All box borders, titles, separators, and the `Choice :` prompt |
+| Text colour | Static menu labels and informational text inside boxes |
+| Entry colour | Vault entry rows — the lines showing your stored site names |
+
+Changes apply immediately to the screen and are saved to `bearcave/theme.conf`. The file is loaded automatically on every startup, so your colours persist across sessions. If the file is missing or deleted, all three roles revert to green.
+
+---
+
 ## MFA setup
 
-From the session menu, select **7 — Enable MFA**. BearCave generates a TOTP secret and displays:
+From the session menu, select **7 — Enable MFA**. bearcave.sh generates a TOTP secret and displays:
 
 - The raw base32 secret (enter this manually into your authenticator app)
 - An `otpauth://` URL (paste into a QR code generator if preferred)
@@ -149,7 +164,7 @@ This prevents an attacker who has obtained only the master password from strippi
 
 ## Data storage
 
-BearCave stores all data in a `bearcave/` directory created next to the script:
+bearcave.sh stores all data in a `bearcave/` directory created next to the script:
 
 ```
 bearcave/
@@ -163,6 +178,7 @@ bearcave/
     bearcave.log         # activity log (no passwords are ever logged)
     bearcave.log.1       # rotated log (kept for one rotation cycle)
   tmp/                   # secure temp directory (cleaned on exit)
+  theme.conf             # appearance settings (border, text, entry colours)
 ```
 
 All files are created with permissions `600` (owner read/write only).  
@@ -199,8 +215,8 @@ The following constants at the top of `bearcave.sh` can be adjusted:
 
 | Version | Notes |
 |---|---|
-| 2.0 | Rewritten TUI with box-drawing characters, green theme. Fixed structural bug in vault_add_entry. Passwords passed via stdin (not process list). Temp files use mktemp. Brute-force lockout. Session timeout. TOTP clock-drift tolerance. Username validation. Log rotation. Secure shred on user deletion. MFA disable requires TOTP. Clipboard copy from viewer. |
-| 1.1 | Initial public release |
+| 2.0 | Rewritten TUI with box-drawing characters, green theme. Fixed structural bug in vault_add_entry. Passwords passed via stdin (not process list). Temp files use mktemp. Brute-force lockout. Session timeout. TOTP clock-drift tolerance. Username validation. Log rotation. Secure shred on user deletion. MFA disable requires TOTP. Clipboard copy from viewer. Appearance settings with per-role colour customisation. Repository renamed to bearcave.sh. |
+| 1.1 | Initial public release (BearCave) |
 
 ---
 
@@ -219,20 +235,20 @@ Please ensure any changes:
 ## Author
 
 **Frederik Flakne**, 2025  
-GitHub: [https://github.com/Boeddelen/BearCave](https://github.com/Boeddelen/BearCave)
+GitHub: [https://github.com/Boeddelen/bearcave.sh](https://github.com/Boeddelen/bearcave.sh)
 
 ---
 
 ## License
 
-BearCave is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License version 3** as published by the Free Software Foundation.
+bearcave.sh is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License version 3** as published by the Free Software Foundation.
 
-BearCave is distributed in the hope that it will be useful, but **without any warranty** — without even the implied warranty of merchantability or fitness for a particular purpose. See the GNU General Public License for more details.
+bearcave.sh is distributed in the hope that it will be useful, but **without any warranty** — without even the implied warranty of merchantability or fitness for a particular purpose. See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with this program. If not, see [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
 
 ```
-BearCave - Terminal-based encrypted password vault
+bearcave.sh - Terminal-based encrypted password vault
 Copyright (C) 2025  Frederik Flakne
 
 This program is free software: you can redistribute it and/or modify
