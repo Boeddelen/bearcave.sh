@@ -59,7 +59,25 @@ chmod +x bearcave.sh
 ./bearcave.sh
 ```
 
-No build step required. bearcave.sh creates its data directory (`./bearcave/`) next to the script on first run.
+No build step required. On first run, bearcave.sh creates its data directory next to the script (`./bearcave/`).
+
+### Adding to PATH
+
+From the main menu, select **6 — Install to PATH**. This will:
+
+1. Copy `bearcave.sh` to `~/.local/bin/bearcave.sh`
+2. Add `~/.local/bin` to your `PATH` in `~/.bashrc` and `~/.zshrc` (if not already present)
+3. Switch the data directory to `~/.local/share/bearcave` so your vault is always found regardless of which directory you call the script from
+
+After installation, restart your shell (or run `source ~/.bashrc`) and launch from anywhere with:
+
+```bash
+bearcave.sh
+```
+
+The install option is only shown when running from the source directory. Once installed, it disappears from the menu since it is no longer needed.
+
+To update an existing installation to a newer version, run the script from the repo directory and choose **Install to PATH** again — it will detect the existing installation and ask for confirmation before overwriting.
 
 ---
 
@@ -88,7 +106,8 @@ From the main menu, select **1 — Create user** to set up your vault. You will 
 | 3 | Enable MFA (standalone, without an active session) |
 | 4 | Disable MFA (standalone — requires master password + TOTP) |
 | 5 | Delete a user and all associated data |
-| 6 | Exit |
+| 6 | Install to PATH `~/.local/bin` (shown only before installation) |
+| 7 | Exit |
 
 ### Session menu (after login)
 
@@ -164,7 +183,12 @@ This prevents an attacker who has obtained only the master password from strippi
 
 ## Data storage
 
-bearcave.sh stores all data in a `bearcave/` directory created next to the script:
+When run directly from the source directory, data is stored in a `bearcave/` subdirectory next to the script. When installed to `~/.local/bin`, data moves to the XDG user data directory so the vault is always found regardless of which directory you call the script from:
+
+| Run mode | Data directory |
+|---|---|
+| From source directory | `./bearcave/` (next to the script) |
+| Installed via PATH | `~/.local/share/bearcave/` |
 
 ```
 bearcave/
@@ -215,7 +239,7 @@ The following constants at the top of `bearcave.sh` can be adjusted:
 
 | Version | Notes |
 |---|---|
-| 2.0 | Rewritten TUI with box-drawing characters, green theme. Fixed structural bug in vault_add_entry. Passwords passed via stdin (not process list). Temp files use mktemp. Brute-force lockout. Session timeout. TOTP clock-drift tolerance. Username validation. Log rotation. Secure shred on user deletion. MFA disable requires TOTP. Clipboard copy from viewer. Appearance settings with per-role colour customisation. Repository renamed to bearcave.sh. |
+| 2.0 | Rewritten TUI with box-drawing characters, green theme. Fixed structural bug in vault_add_entry. Passwords passed via stdin (not process list). Temp files use mktemp. Brute-force lockout. Session timeout. TOTP clock-drift tolerance. Username validation. Log rotation. Secure shred on user deletion. MFA disable requires TOTP. Clipboard copy from viewer. Appearance settings with per-role colour customisation. Install to PATH via built-in installer. XDG-compliant data directory when installed. Repository renamed to bearcave.sh. |
 | 1.1 | Initial public release (BearCave) |
 
 ---
