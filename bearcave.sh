@@ -1292,7 +1292,10 @@ user_session() {
 #  INSTALL TO PATH
 # =============================================================================
 install_to_path() {
-  local self; self="$(realpath "${BASH_SOURCE[0]}")"
+  # Resolve the true path of this script without relying on realpath
+  local self
+  self="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+
   local rc_files=("${HOME}/.bashrc" "${HOME}/.zshrc")
 
   # ── Already installed? ────────────────────────────────────────────────────
@@ -1319,7 +1322,7 @@ install_to_path() {
   # ── Create ~/.local/bin if it does not exist ──────────────────────────────
   if [[ ! -d "${INSTALL_DIR}" ]]; then
     mkdir -p "${INSTALL_DIR}"
-    chmod 700 "${INSTALL_DIR}"
+    chmod 755 "${INSTALL_DIR}"
   fi
 
   # ── Copy script ───────────────────────────────────────────────────────────
@@ -1329,16 +1332,44 @@ install_to_path() {
   fi
   chmod 755 "${INSTALL_TARGET}"
 
-  # ── Add ~/.local/bin to PATH in shell rc files if not already present ─────
-  local added_to=()
+  # ── Write PATH export and aliases into each rc file ───────────────────────
+  #
+  #  Three things get written if not already present:
+  #    1. PATH export  -- so  bearcave.sh  works from any directory
+  #    2. alias bearcave  -- shorter convenience command
+  #    3. alias bcave     -- shortest alias (bc is taken by the system calculator)
+  #
+  #  We check for the exact export/alias line, not just any mention of the
+  #  string, to avoid false positives from comments or unrelated PATH managers.
+  # ──────────────────────────────────────────────────────────────────────────
+  local path_added=()
+  local alias_added=()
   local rcf
+
   for rcf in "${rc_files[@]}"; do
-    # Only touch the file if it already exists (respect intentional absence)
     [[ -f "${rcf}" ]] || continue
-    if ! grep -q "\.local/bin" "${rcf}" 2>/dev/null; then
-      printf '\n# Added by bearcave.sh installer\n' >> "${rcf}"
-      printf 'export PATH="${HOME}/.local/bin:${PATH}"\n' >> "${rcf}"
-      added_to+=("${rcf}")
+
+    local wrote_something=0
+
+    # PATH
+    if ! grep -q 'export PATH.*\.local/bin' "${rcf}" 2>/dev/null; then
+      {
+        printf '\n# --- bearcave.sh: PATH ---\n'
+        printf 'export PATH="${HOME}/.local/bin${PATH:+:${PATH}}"\n'
+      } >> "${rcf}"
+      path_added+=("${rcf}")
+      wrote_something=1
+    fi
+
+    # Aliases (check for each independently)
+    if ! grep -q 'alias bearcave=' "${rcf}" 2>/dev/null; then
+      {
+        (( wrote_something )) || printf '\n'
+        printf '# --- bearcave.sh: aliases ---\n'
+        printf 'alias bearcave="bearcave.sh"\n'
+        printf 'alias bcave="bearcave.sh"\n'
+      } >> "${rcf}"
+      alias_added+=("${rcf}")
     fi
   done
 
@@ -1348,23 +1379,25 @@ install_to_path() {
   draw_text "Installed to : ${INSTALL_TARGET}"
   draw_text "Data dir     : ${HOME}/.local/share/bearcave"
   draw_sep
-  if (( ${#added_to[@]} > 0 )); then
-    draw_text "PATH updated in:"
-    local f
-    for f in "${added_to[@]}"; do
-      draw_text "  ${f}"
-    done
+  draw_text "Commands after reloading your shell:"
+  draw_text "  bearcave.sh   -- full command"
+  draw_text "  bearcave      -- short alias"
+  draw_text "  bcave         -- shortest alias"
+  draw_sep
+
+  if (( ${#path_added[@]} > 0 || ${#alias_added[@]} > 0 )); then
+    draw_text "Shell config updated. Activate now with:"
+    draw_blank
+    draw_text "  bash:  source ~/.bashrc"
+    draw_text "  zsh:   source ~/.zshrc"
     draw_sep
-    draw_text "Restart your shell or run:"
-    draw_text "  source ~/.bashrc   (bash)"
-    draw_text "  source ~/.zshrc    (zsh)"
-    draw_sep
-    draw_text "Then launch from anywhere with:  bearcave.sh"
+    draw_text "Or simply open a new terminal."
   else
-    draw_text "~/.local/bin is already in your PATH."
-    draw_sep
-    draw_text "Launch from anywhere with:  bearcave.sh"
+    draw_text "Config already up to date — no changes needed."
+    draw_text "If bearcave.sh is not found, open a new terminal"
+    draw_text "or run:  source ~/.bashrc"
   fi
+
   draw_bottom
 
   log_info "Installed to ${INSTALL_TARGET}"
