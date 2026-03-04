@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  BearCave - Terminal-based encrypted password vault
+#  bearcave.sh - Terminal-based encrypted password vault
 #  Version : 2.0
 #  Author  : Frederik Flakne, 2025
-#  GitHub  : https://github.com/Boeddelen/BearCave
+#  GitHub  : https://github.com/Boeddelen/bearcave.sh
 #  Deps    : openssl, oathtool (optional, for TOTP-MFA)
 # =============================================================================
 
@@ -14,7 +14,21 @@ trap 'die "Unexpected error at line ${LINENO}."' ERR
 #  PATHS AND GLOBAL CONFIG
 # =============================================================================
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_DIR="${SCRIPT_DIR}/bearcave"
+INSTALL_DIR="${HOME}/.local/bin"
+INSTALL_TARGET="${INSTALL_DIR}/bearcave.sh"
+
+# Data directory:
+#   - When running from the install location (~/.local/bin), store data in
+#     the XDG user data dir (~/.local/share/bearcave) so it is stable
+#     regardless of what directory the user calls the script from.
+#   - When running directly from the repo/source directory, keep data
+#     next to the script as before (./bearcave/).
+if [[ "${SCRIPT_DIR}" == "${HOME}/.local/bin"* ]]; then
+  BASE_DIR="${HOME}/.local/share/bearcave"
+else
+  BASE_DIR="${SCRIPT_DIR}/bearcave"
+fi
+
 LOG_DIR="${BASE_DIR}/logs"
 TMP_DIR="${BASE_DIR}/tmp"
 USERS_DIR="${BASE_DIR}/users"
@@ -39,18 +53,76 @@ BEARCAVE_PASS=""
 LAST_ACTIVITY=0
 
 # =============================================================================
-#  COLORS  (green theme)
+#  THEME SYSTEM
+#
+#  Three independently configurable colour roles:
+#    BORDER_COLOR  -- box borders, titles, separators, the Choice prompt
+#    TEXT_COLOR    -- static menu labels and informational text inside boxes
+#    ENTRY_COLOR   -- vault entry rows (the lines the user cares most about)
+#
+#  Stored as plain text in bearcave/theme.conf, one KEY=N line per setting.
+#  N is a tput setaf colour number (1-7):
+#    1=red  2=green  3=yellow  4=blue  5=magenta  6=cyan  7=white
+#
+#  Defaults (applied when no theme.conf exists): all three roles green.
 # =============================================================================
-if command -v tput >/dev/null 2>&1 && [ -t 1 ] && [ -n "${TERM:-}" ]; then
-  G="$(tput setaf 2)"                   # normal green  - row text
-  BG="$(tput bold)$(tput setaf 2)"      # bold green    - borders + titles
-  DG="$(tput setaf 2)"                  # dim green     - hints
-  RED="$(tput setaf 1)"
-  BOLD="$(tput bold)"
-  RESET="$(tput sgr0)"
-else
-  G="" BG="" DG="" RED="" BOLD="" RESET=""
-fi
+
+THEME_FILE="${BASE_DIR}/theme.conf"
+
+# Defaults
+THEME_BORDER=2
+THEME_TEXT=2
+THEME_ENTRY=2
+
+# Initialise colour variables (overwritten by apply_theme)
+G="" BG="" DG="" EC="" RED="" BOLD="" RESET=""
+
+load_theme() {
+  if [ -f "${THEME_FILE}" ]; then
+    local line key val
+    while IFS='=' read -r key val; do
+      key="${key//[[:space:]]/}"
+      val="${val//[[:space:]]/}"
+      [[ "${key}" =~ ^# ]] && continue
+      [[ -z "${key}"    ]] && continue
+      if [[ ! "${val}" =~ ^[1-7]$ ]]; then
+        log_warn "theme.conf: ignoring invalid value ${key}=${val}"
+        continue
+      fi
+      case "${key}" in
+        BORDER_COLOR) THEME_BORDER="${val}" ;;
+        TEXT_COLOR)   THEME_TEXT="${val}"   ;;
+        ENTRY_COLOR)  THEME_ENTRY="${val}"  ;;
+      esac
+    done < "${THEME_FILE}"
+  fi
+  apply_theme
+}
+
+save_theme() {
+  {
+    printf '# bearcave.sh theme configuration\n'
+    printf '# Colour values: 1=red 2=green 3=yellow 4=blue 5=magenta 6=cyan 7=white\n'
+    printf 'BORDER_COLOR=%d\n' "${THEME_BORDER}"
+    printf 'TEXT_COLOR=%d\n'   "${THEME_TEXT}"
+    printf 'ENTRY_COLOR=%d\n'  "${THEME_ENTRY}"
+  } > "${THEME_FILE}"
+  chmod 600 "${THEME_FILE}"
+}
+
+apply_theme() {
+  if command -v tput >/dev/null 2>&1 && [ -t 1 ] && [ -n "${TERM:-}" ]; then
+    BOLD="$(tput bold)"
+    RESET="$(tput sgr0)"
+    RED="$(tput setaf 1)"
+    BG="$(tput bold)$(tput setaf "${THEME_BORDER}")"
+    DG="$(tput setaf "${THEME_BORDER}")"
+    G="$(tput setaf "${THEME_TEXT}")"
+    EC="$(tput bold)$(tput setaf "${THEME_ENTRY}")"
+  else
+    BOLD="" RESET="" RED="" BG="" DG="" G="" EC=""
+  fi
+}
 
 # =============================================================================
 #  BOX-DRAWING CHARACTERS  (UTF-8, 3 bytes each, 1 display column each)
@@ -115,7 +187,7 @@ draw_row() {
   local clen=${#content}
   local pad=$(( inner - clen ))
   printf '%s%s%s' "${BG}" "${V}" "${RESET}"
-  printf '%s%s%s' "${G}"  "${content}" "${RESET}"
+  printf '%s%s%s' "${EC}" "${content}" "${RESET}"
   printf '%*s' "$(( pad > 0 ? pad : 0 ))" ''
   printf '%s%s%s\n' "${BG}" "${V}" "${RESET}"
 }
@@ -256,9 +328,9 @@ banner() {
   # Top border
   printf '%s%s' "${BG}" "${TL}"; hline "${inner}"; printf '%s%s\n' "${TR}" "${RESET}"
 
-  # Line 1: "  BEARCAVE" on left, "v2.0  " on right
+  # Line 1: "  bearcave.sh" on left, "v2.0  " on right
   # All widths are pure ASCII so ${#} is accurate here
-  local l1="  BEARCAVE"
+  local l1="  bearcave.sh"
   local r1="v2.0  "
   local gap1=$(( inner - ${#l1} - ${#r1} ))
   printf '%s%s%s' "${BG}" "${V}" "${RESET}"
@@ -548,7 +620,7 @@ setup_mfa() {
     secret="$("${OPENSSL_BIN}" rand -hex 20 | tr '[:lower:]' '[:upper:]')"
   fi
 
-  local otpauth="otpauth://totp/BearCave:${username}?secret=${secret}&issuer=BearCave&digits=6&period=30&algorithm=SHA1"
+  local otpauth="otpauth://totp/bearcave.sh:${username}?secret=${secret}&issuer=bearcave.sh&digits=6&period=30&algorithm=SHA1"
 
   local tmp; tmp="$(mktemp "${TMP_DIR}/mfa.XXXXXX")"
   printf '%s' "${secret}" > "${tmp}"
@@ -1066,6 +1138,109 @@ delete_user() {
 }
 
 # =============================================================================
+#  THEME MENU
+# =============================================================================
+
+# colour_name N  --  return human-readable name for tput colour number
+colour_name() {
+  case "$1" in
+    1) printf 'red'     ;;
+    2) printf 'green'   ;;
+    3) printf 'yellow'  ;;
+    4) printf 'blue'    ;;
+    5) printf 'magenta' ;;
+    6) printf 'cyan'    ;;
+    7) printf 'white'   ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# colour_preview N TEXT  --  print TEXT in colour N with reset after
+colour_preview() {
+  local n="$1" text="$2"
+  if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
+    printf '%s%s%s' "$(tput bold)$(tput setaf "${n}")" "${text}" "$(tput sgr0)"
+  else
+    printf '%s' "${text}"
+  fi
+}
+
+theme_menu() {
+  local roles=("BORDER_COLOR" "TEXT_COLOR" "ENTRY_COLOR")
+  local labels=("Border / titles" "Static menu text" "Vault entry rows")
+  local vars=("THEME_BORDER" "THEME_TEXT" "THEME_ENTRY")
+
+  while true; do
+    printf '\n'
+    draw_top "APPEARANCE SETTINGS"
+
+    # Show current value for each role with a live colour swatch
+    local i
+    for (( i=0; i<${#roles[@]}; i++ )); do
+      local var="${vars[$i]}"
+      local cur="${!var}"
+      local name; name="$(colour_name "${cur}")"
+      local swatch; swatch="$(colour_preview "${cur}" "  ${name}  ")"
+      draw_row " $(( i+1 ))" "${labels[$i]}  ->  ${swatch}"
+    done
+
+    draw_sep
+    draw_text "Choose a role to change, or [Enter] to go back."
+    draw_bottom
+
+    local sel
+    read_visible "Role number : " sel
+
+    if [[ -z "${sel}" ]]; then
+      break
+    fi
+
+    if [[ ! "${sel}" =~ ^[1-3]$ ]]; then
+      msg_warn "Enter 1, 2, or 3."
+      continue
+    fi
+
+    local role_idx=$(( sel - 1 ))
+    local role_label="${labels[$role_idx]}"
+    local role_var="${vars[$role_idx]}"
+
+    # Show colour picker
+    printf '\n'
+    draw_top "CHOOSE COLOUR FOR: ${role_label}"
+    local c
+    for c in 1 2 3 4 5 6 7; do
+      local cname; cname="$(colour_name "${c}")"
+      local swatch; swatch="$(colour_preview "${c}" "  $(printf '%-8s' "${cname}")  ")"
+      draw_row " ${c}" "${swatch}"
+    done
+    draw_sep
+    draw_text "Enter a number (1-7), or [Enter] to cancel."
+    draw_bottom
+
+    local pick
+    read_visible "Colour : " pick
+
+    if [[ -z "${pick}" ]]; then
+      continue
+    fi
+
+    if [[ ! "${pick}" =~ ^[1-7]$ ]]; then
+      msg_warn "Please enter a number between 1 and 7."
+      continue
+    fi
+
+    # Apply immediately so the user sees the change take effect at once
+    printf -v "${role_var}" '%s' "${pick}"
+    apply_theme
+    save_theme
+
+    local chosen_name; chosen_name="$(colour_name "${pick}")"
+    msg_ok "${role_label} set to ${chosen_name}."
+    log_info "Theme changed: ${roles[$role_idx]}=${pick} (${chosen_name})"
+  done
+}
+
+# =============================================================================
 #  USER SESSION MENU
 # =============================================================================
 user_session() {
@@ -1089,21 +1264,23 @@ user_session() {
     draw_row " 8" "Disable MFA"
     draw_sep
     draw_row " 9" "Lock and log out"
+    draw_row "10" "Appearance settings"
     draw_bottom
 
     local c
     prompt_choice c
     case "${c}" in
-      1) vault_add_entry    "${user}" "${pass}" ;;
-      2) vault_list_sites   "${user}" "${pass}" ;;
-      3) vault_show_entry   "${user}" "${pass}" ;;
-      4) vault_edit_entry   "${user}" "${pass}" ;;
-      5) vault_delete_entry "${user}" "${pass}" ;;
-      6) vault_change_master_password ;;
-      7) setup_mfa   "${user}" ;;
-      8) disable_mfa "${user}" ;;
-      9) msg_ok "Session closed."; log_info "Logout: ${user}"; break ;;
-      *) msg_warn "Invalid choice." ;;
+      1)  vault_add_entry    "${user}" "${pass}" ;;
+      2)  vault_list_sites   "${user}" "${pass}" ;;
+      3)  vault_show_entry   "${user}" "${pass}" ;;
+      4)  vault_edit_entry   "${user}" "${pass}" ;;
+      5)  vault_delete_entry "${user}" "${pass}" ;;
+      6)  vault_change_master_password ;;
+      7)  setup_mfa   "${user}" ;;
+      8)  disable_mfa "${user}" ;;
+      9)  msg_ok "Session closed."; log_info "Logout: ${user}"; break ;;
+      10) theme_menu ;;
+      *)  msg_warn "Invalid choice." ;;
     esac
   done
 
@@ -1112,11 +1289,98 @@ user_session() {
 }
 
 # =============================================================================
+#  INSTALL TO PATH
+# =============================================================================
+install_to_path() {
+  local self; self="$(realpath "${BASH_SOURCE[0]}")"
+  local rc_files=("${HOME}/.bashrc" "${HOME}/.zshrc")
+
+  # ── Already installed? ────────────────────────────────────────────────────
+  if [[ -f "${INSTALL_TARGET}" ]]; then
+    local installed_ver running_ver
+    installed_ver="$(grep -m1 '^#  Version' "${INSTALL_TARGET}" | awk '{print $NF}')"
+    running_ver="$(grep -m1 '^#  Version' "${self}" | awk '{print $NF}')"
+    printf '\n'
+    draw_top "ALREADY INSTALLED"
+    draw_text "Location  : ${INSTALL_TARGET}"
+    draw_text "Installed : v${installed_ver}"
+    draw_text "This copy : v${running_ver}"
+    draw_sep
+    draw_text "Reinstall / update to this copy? [y/N]"
+    draw_bottom
+    local ans
+    read_visible "Answer : " ans
+    if [[ ! "${ans}" =~ ^[Yy]$ ]]; then
+      msg_info "Installation unchanged."
+      return 0
+    fi
+  fi
+
+  # ── Create ~/.local/bin if it does not exist ──────────────────────────────
+  if [[ ! -d "${INSTALL_DIR}" ]]; then
+    mkdir -p "${INSTALL_DIR}"
+    chmod 700 "${INSTALL_DIR}"
+  fi
+
+  # ── Copy script ───────────────────────────────────────────────────────────
+  if ! cp -- "${self}" "${INSTALL_TARGET}"; then
+    msg_err "Failed to copy script to ${INSTALL_TARGET}."
+    return 1
+  fi
+  chmod 755 "${INSTALL_TARGET}"
+
+  # ── Add ~/.local/bin to PATH in shell rc files if not already present ─────
+  local added_to=()
+  local rcf
+  for rcf in "${rc_files[@]}"; do
+    # Only touch the file if it already exists (respect intentional absence)
+    [[ -f "${rcf}" ]] || continue
+    if ! grep -q "\.local/bin" "${rcf}" 2>/dev/null; then
+      printf '\n# Added by bearcave.sh installer\n' >> "${rcf}"
+      printf 'export PATH="${HOME}/.local/bin:${PATH}"\n' >> "${rcf}"
+      added_to+=("${rcf}")
+    fi
+  done
+
+  # ── Report ────────────────────────────────────────────────────────────────
+  printf '\n'
+  draw_top "INSTALLATION COMPLETE"
+  draw_text "Installed to : ${INSTALL_TARGET}"
+  draw_text "Data dir     : ${HOME}/.local/share/bearcave"
+  draw_sep
+  if (( ${#added_to[@]} > 0 )); then
+    draw_text "PATH updated in:"
+    local f
+    for f in "${added_to[@]}"; do
+      draw_text "  ${f}"
+    done
+    draw_sep
+    draw_text "Restart your shell or run:"
+    draw_text "  source ~/.bashrc   (bash)"
+    draw_text "  source ~/.zshrc    (zsh)"
+    draw_sep
+    draw_text "Then launch from anywhere with:  bearcave.sh"
+  else
+    draw_text "~/.local/bin is already in your PATH."
+    draw_sep
+    draw_text "Launch from anywhere with:  bearcave.sh"
+  fi
+  draw_bottom
+
+  log_info "Installed to ${INSTALL_TARGET}"
+}
+
+# =============================================================================
 #  MAIN MENU
 # =============================================================================
 main_menu() {
   while true; do
     banner
+
+    # Show install option only when not already running from install location
+    local show_install=1
+    [[ "${SCRIPT_DIR}" == "${HOME}/.local/bin"* ]] && show_install=0
+
     draw_top "MAIN MENU"
     draw_row " 1" "Create user"
     draw_row " 2" "Log in"
@@ -1125,7 +1389,8 @@ main_menu() {
     draw_row " 4" "Disable MFA (standalone)"
     draw_row " 5" "Delete user"
     draw_sep
-    draw_row " 6" "Exit"
+    (( show_install )) && draw_row " 6" "Install to PATH (~/.local/bin)"
+    draw_row " 7" "Exit"
     draw_bottom
 
     local choice
@@ -1168,8 +1433,15 @@ main_menu() {
         delete_user "${username}"
         ;;
       6)
-        msg_ok "BearCave closed."
-        log_info "BearCave shut."
+        if (( show_install )); then
+          install_to_path
+        else
+          msg_warn "Invalid choice."
+        fi
+        ;;
+      7)
+        msg_ok "bearcave.sh closed."
+        log_info "bearcave.sh shut."
         break
         ;;
       *)
@@ -1183,8 +1455,9 @@ main_menu() {
 #  ENTRY POINT
 # =============================================================================
 init_dirs
+load_theme
 rotate_log
 check_deps
-log_info "BearCave started."
+log_info "bearcave.sh started."
 main_menu
 umask "${UMASK_PREV}"
